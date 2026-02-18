@@ -1,99 +1,48 @@
-import time
-import customtkinter as ctk
-from PIL import Image, ImageTk
+import pickle
+from flask import Flask, request, jsonify, render_template
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
-import torch
-from diffusers import StableDiffusionPipeline
+application = Flask(__name__) 
+app = application
 
-# --------------------------------------------------
-# 1) LOAD MODEL ONCE — correctly and predictably
-# --------------------------------------------------
+# Import Ridge Regression model and Standard Scaler pickle
+ridge_model = pickle.load(open('models/ridge.pkl', 'rb'))
+Standard_Scaler_pickle = pickle.load(open('models/scaler.pkl', 'rb'))
 
-device = "cpu"   # you do NOT have CUDA, stop pretending
+# Route for home page
+@app.route('/')
 
-pipe = StableDiffusionPipeline.from_pretrained(
-    "runwayml/stable-diffusion-v1-5"
-).to(device)
+def index():
+    return render_template('index.html')
 
-# --------------------------------------------------
-# 2) APP SETUP — consistent and readable
-# --------------------------------------------------
+@app.route('/predictdata',methods=['GET','POST'])
 
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
+def predict_datapoint():
+    if request.method == 'POST':
 
-app = ctk.CTk()
-app.geometry("550x650")
-app.title("Stable Bud")
+        day = float(request.form.get('day'))
+        month = float(request.form.get('month'))
+        year = float(request.form.get('year'))
+        Temperature = float(request.form.get('Temperature'))
+        RH = float(request.form.get('RH'))
+        Ws = float(request.form.get('Ws'))
+        Rain = float(request.form.get('Rain'))
+        FFMC = float(request.form.get('FFMC'))
+        DMC = float(request.form.get('DMC'))
+        ISI = float(request.form.get('ISI'))
+        Classes = float(request.form.get('Classes'))
+        Region = float(request.form.get('Region'))
 
-# Main container (better structure than random x,y)
-frame = ctk.CTkFrame(app)
-frame.pack(fill="both", expand=True, padx=10, pady=10)
+        new_data = [[day, month, year, Temperature, RH, Ws, Rain, FFMC, DMC, ISI, Classes, Region]]
 
-# --------------------------------------------------
-# 3) UI ELEMENTS — structured, not messy
-# --------------------------------------------------
+        new_data_scaled = Standard_Scaler_pickle.transform(new_data)
+        result=ridge_model.predict(new_data_scaled)
 
-prompt = ctk.CTkEntry(
-    master=frame,
-    height=40,
-    font=("Arial", 18),
-    fg_color="white",
-    text_color="black",
-    placeholder_text="Describe your image..."
-)
-prompt.pack(fill="x", pady=(0, 10))
+        return render_template('home.html', result=result[0])
+    else:
+        return render_template('home.html')
 
-lmain = ctk.CTkLabel(
-    master=frame,
-    text="Generated image will appear here",
-    width=512,
-    height=512
-)
-lmain.pack(pady=10)
-
-# --------------------------------------------------
-# 4) GENERATION FUNCTION — safe + professional
-# --------------------------------------------------
-
-def generate():
-    text = prompt.get().strip()
-    if not text:
-        print("Error: Empty prompt")
-        return
-
-    try:
-        print("Generating image... please wait.")
-
-        image = pipe(
-            text,
-            guidance_scale=8.5
-        ).images[0]
-
-        # Save with unique name (your old code overwrote files)
-        filename = f"image_{int(time.time())}.png"
-        image.save(filename)
-
-        img = ImageTk.PhotoImage(image)
-        lmain.configure(image=img, text="")
-        lmain.image = img   # keep reference
-
-        print(f"Saved: {filename}")
-
-    except Exception as e:
-        print("Generation failed:", e)
-
-# --------------------------------------------------
-# 5) BUTTON — last, after function exists
-# --------------------------------------------------
-
-trigger = ctk.CTkButton(
-    master=frame,
-    text="Generate",
-    command=generate,
-    height=40,
-    width=140
-)
-trigger.pack(pady=10)
-
-app.mainloop()
+if __name__ == "__main__":
+    app.run(debug=True)
